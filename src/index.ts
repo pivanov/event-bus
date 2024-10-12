@@ -1,104 +1,95 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
+
+// Add a type for the event bus message
+export type EventBusMessage<T extends string = string, M = unknown> = {
+  topic: T;
+  message: M;
+};
 
 /**
- * Type representing an event action with a type and optional data.
- * @template D - Data associated with the event action.
- * @template T - Type of the event action.
+ * Base event type representing an action with a topic and associated data.
  */
-type TEventAction<D extends unknown | undefined = unknown, T extends string = string> = {
-  type: T;
-} & D;
+type EventAction<T extends EventBusMessage> = {
+  topic: T['topic'];
+  data: T['message'];
+};
 
 /**
- * Type representing a filter for event actions.
- * Can be a string, array of strings, regular expression, or a function.
+ * Type-safe event subscriber callback based on the event.
  */
-type TFilter = string | string[] | RegExp | ((event: TEventAction) => boolean);
+type Filter<T extends EventBusMessage> = T['topic'] | ((event: EventAction<T>) => boolean);
 
-const subscribers: Set<[TFilter, (event: TEventAction) => void]> = new Set();
+type Subscriber<T extends EventBusMessage> = [Filter<T>, (event: EventAction<T>) => void];
+
+const subscribers = new Set<Subscriber<EventBusMessage>>();
 
 /**
  * Subscribes to events that match the given filter.
- * @template T - Data associated with the event action.
- * @param {TFilter} filter - The filter to match events.
- * @param {(event: TEventAction<T>) => void} callback - The callback to execute when an event matches the filter.
- * @returns {(() => void) | undefined} - Function to unsubscribe from the events or undefined if no filter or callback is provided.
+ * @param filter - The filter to match events.
+ * @param callback - The callback to execute when an event matches the filter.
+ * @returns Function to unsubscribe from the events.
  */
-export const busSubscribe = <T extends unknown | undefined>(
-  filter: TFilter,
-  callback: (event: TEventAction<T>) => void,
-): (() => void) | undefined => {
-  if (!filter || !callback) {
-    return;
-  }
-
-  const newSubscriber = [filter, callback] as [TFilter, (event: TEventAction) => void];
-
-  if (Array.from(subscribers).some((subscriber) => subscriber[0] === filter && subscriber[1] === callback)) {
-    return;
-  }
-
-  subscribers.add(newSubscriber);
+export const busSubscribe = <T extends EventBusMessage>(
+  filter: Filter<T>,
+  callback: (event: EventAction<T>) => void
+): (() => void) => {
+  const newSubscriber: Subscriber<T> = [filter, callback];
+  subscribers.add(newSubscriber as Subscriber<EventBusMessage>);
 
   return () => {
-    subscribers.delete(newSubscriber);
+    subscribers.delete(newSubscriber as Subscriber<EventBusMessage>);
   };
 };
 
 /**
  * Dispatches an event to all subscribers that match the event type.
- * @template D - Data associated with the event action.
- * @param {string | TEventAction<D>} event - The event to dispatch.
+ * @param topic - The event topic to dispatch.
+ * @param message - Message associated with the event.
  */
-export const busDispatch = <D extends unknown | undefined>(event: string | TEventAction<D>): void => {
-  let type = '';
-  let args: TEventAction<D>;
-  if (typeof event === 'string') {
-    type = event;
-    args = { type } as TEventAction<undefined>;
-  } else {
-    type = event.type;
-    args = event;
-  }
+export const busDispatch = <T extends EventBusMessage>(
+  topic: T['topic'],
+  message: T['message']
+): void => {
+  const eventAction: EventAction<T> = { topic, data: message };
 
-  // Notify relevant subscribers
-  subscribers.forEach(([filter, callback]): void => {
-    if (
-      typeof filter === 'string' && filter !== type
-      || Array.isArray(filter) && !filter.includes(type)
-      || filter instanceof RegExp && !filter.test(type)
-      || typeof filter === 'function' && !filter(args)
-    ) {
-      return;
+  subscribers.forEach(([filter, callback]) => {
+    try {
+      if (
+        (typeof filter === 'string' && filter === eventAction.topic) ||
+        (typeof filter === 'function' && filter(eventAction as EventAction<EventBusMessage>))
+      ) {
+        callback(eventAction as EventAction<EventBusMessage>);
+      }
+    } catch (error) {
+      console.error(`Error in event bus subscriber for topic "${topic}":`, error);
     }
-
-    callback(args);
   });
 };
 
 /**
- * React hook to subscribe to events and dispatch events.
- * @template D - Data associated with the event action.
- * @param {TFilter} type - The filter to match events.
- * @param {(event: TEventAction<D>) => void} callback - The callback to execute when an event matches the filter.
- * @param {unknown[]} [deps=[]] - The dependencies for the useEffect hook.
- * @returns {<D>(event: string | TEventAction<D>) => void} - Function to dispatch events.
+ * React hook to subscribe to events.
+ * @param topic - The event topic to subscribe to.
+ * @param callback - The callback to execute when an event matches the topic.
+ * @param deps - The dependencies for the useEffect hook.
  *
  * @example
  * // Usage in a React component
- * useEventBus<{ data: string }>('event-type', (event) => {
- *   console.log(event.data);
+ * useEventBus<IEventBusMessage>("@@-message", (message) => {
+ *   console.log("Received message:", message);
  * });
  */
-export const useEventBus = <D extends unknown | undefined>(
-  type: TFilter,
-  callback: (event: TEventAction<D>) => void,
-  deps: unknown[] = [],
-): <D extends unknown>(event: string | TEventAction<D>) => void => {
-  useEffect(() => {
-    const unsubscribe = busSubscribe<TEventAction<D>>(type, callback);
-    return unsubscribe;
-  }, [type, callback, deps]);
+export const useEventBus = <T extends EventBusMessage>(
+  topic: T['topic'],
+  callback: (message: T['message']) => void,
+  deps: unknown[] = []
+): void => {
+  const memoizedCallback = useCallback((event: EventAction<T>) => {
+    callback(event.data);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callback, ...deps]);
 
-  return busDispatch;
+  useEffect(() => {
+    const unsubscribe = busSubscribe<T>(topic, memoizedCallback);
+    return unsubscribe;
+  }, [topic, memoizedCallback]);
 };

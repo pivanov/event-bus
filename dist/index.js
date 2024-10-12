@@ -1,46 +1,56 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 const subscribers = new Set();
+/**
+ * Subscribes to events that match the given filter.
+ * @param filter - The filter to match events.
+ * @param callback - The callback to execute when an event matches the filter.
+ * @returns Function to unsubscribe from the events.
+ */
 export const busSubscribe = (filter, callback) => {
-    if (!filter || !callback) {
-        return;
-    }
     const newSubscriber = [filter, callback];
-    // Exit early if subscriber already exists
-    if (Array.from(subscribers).some((subscriber) => subscriber[0] === filter && subscriber[1] === callback)) {
-        return;
-    }
     subscribers.add(newSubscriber);
-    // Unsubscribe function
     return () => {
         subscribers.delete(newSubscriber);
     };
 };
-export const busDispatch = (event) => {
-    let type = '';
-    let args;
-    if (typeof event === 'string') {
-        type = event;
-        args = { type };
-    }
-    else {
-        type = event.type;
-        args = event;
-    }
-    // Notify relevant subscribers
+/**
+ * Dispatches an event to all subscribers that match the event type.
+ * @param topic - The event topic to dispatch.
+ * @param message - Message associated with the event.
+ */
+export const busDispatch = (topic, message) => {
+    const eventAction = { topic, data: message };
     subscribers.forEach(([filter, callback]) => {
-        if (typeof filter === 'string' && filter !== type
-            || Array.isArray(filter) && !filter.includes(type)
-            || filter instanceof RegExp && !filter.test(type)
-            || typeof filter === 'function' && !filter(args)) {
-            return;
+        try {
+            if ((typeof filter === 'string' && filter === eventAction.topic) ||
+                (typeof filter === 'function' && filter(eventAction))) {
+                callback(eventAction);
+            }
         }
-        callback(args);
+        catch (error) {
+            console.error(`Error in event bus subscriber for topic "${topic}":`, error);
+        }
     });
 };
-export const useEventBus = (type, callback, deps = []) => {
+/**
+ * React hook to subscribe to events.
+ * @param topic - The event topic to subscribe to.
+ * @param callback - The callback to execute when an event matches the topic.
+ * @param deps - The dependencies for the useEffect hook.
+ *
+ * @example
+ * // Usage in a React component
+ * useEventBus<IEventBusMessage>("@@-message", (message) => {
+ *   console.log("Received message:", message);
+ * });
+ */
+export const useEventBus = (topic, callback, deps = []) => {
+    const memoizedCallback = useCallback((event) => {
+        callback(event.data);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [callback, ...deps]);
     useEffect(() => {
-        const unsubscribe = busSubscribe(type, callback);
+        const unsubscribe = busSubscribe(topic, memoizedCallback);
         return unsubscribe;
-    }, [type, callback, deps]);
-    return busDispatch;
+    }, [topic, memoizedCallback]);
 };

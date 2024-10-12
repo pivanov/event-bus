@@ -1,7 +1,6 @@
+# @pivanov/event-bus
 
-# event-bus
-
-A versatile and lightweight event bus implementation with a React hook for easy integration. This package provides a simple way to manage events in your JavaScript or TypeScript applications, and it seamlessly integrates with React for managing component-level events.
+A versatile and lightweight event bus implementation with a React hook for easy integration.
 
 ## Installation
 
@@ -11,83 +10,96 @@ Install the package using npm:
 npm install @pivanov/event-bus
 ```
 
+Or using yarn:
+
+```bash
+yarn add @pivanov/event-bus
+```
+
 ## Usage
 
 ### Basic Example
 
-First, import the `useEventBus` and `busDispatch` functions from the package. Use the `useEventBus` hook to subscribe to events and `busDispatch` to dispatch events.
+First, import the `useEventBus` and `busDispatch` functions from the package. Define your event interface, then use the `useEventBus` hook to subscribe to events and `busDispatch` to dispatch events.
 
 ```tsx
 import React from 'react';
 import { useEventBus, busDispatch } from '@pivanov/event-bus';
 
-interface MyEvent {
-  data: string;
+// Define your event interface
+interface MyEventBusMessage {
+  topic: string;
+  message: string;
 }
 
-function App() {
-  // Subscribe to 'my-event'
-  useEventBus<MyEvent>('my-event', (event) => {
-    console.log('Event received:', event.data);
-  });
+export const ComponentA = () =>  {
+  // Dispatch '@@-message' when the button is clicked
+  const handleClick = () => {
+    busDispatch<MyEventBusMessage>("@@-message", "Hello World!");
+  };
 
-  // Dispatch 'my-event' when the button is clicked
   return (
-    <button onClick={() => busDispatch<MyEvent>({ type: 'my-event', data: 'Hello World!' })}>
-      Dispatch Event
+    <button onClick={handleClick}>
+      Dispatch Message
     </button>
   );
-}
+};
 
-export default App;
-```
+export const ComponentB = () =>  {
+  const [message, setMessage] = useState('');
 
-### Advanced Usage
-
-You can use more complex filters, such as regular expressions or functions, to control which events trigger your callback.
-
-```tsx
-import React from 'react';
-import { useEventBus, busDispatch } from '@pivanov/event-bus';
-
-interface MyEvent {
-  data: string;
-}
-
-function App() {
-  // Subscribe to events that match a pattern
-  useEventBus<MyEvent>(/my-event-*/, (event) => {
-    console.log('Pattern matched event:', event.data);
+  // Subscribe to topic '@@-message'
+  useEventBus<MyEventBusMessage>("@@-message", (message) => {
+    console.log('Message received:', message);
+    setMessage(message);
   });
 
-  // Dispatch different events
   return (
-    <div>
-      <button onClick={() => busDispatch<MyEvent>({ type: 'my-event-1', data: 'Event 1' })}>
-        Dispatch Event 1
-      </button>
-      <button onClick={() => busDispatch<MyEvent>({ type: 'my-event-2', data: 'Event 2' })}>
-        Dispatch Event 2
-      </button>
-    </div>
+    <>
+      Message: {message}
+    <>
   );
-}
-
-export default App;
+};
 ```
 
 ## API
 
-### `useEventBus(type, callback, deps)`
+### `busSubscribe<T>(filter, callback)`
 
-- **type**: The event type to subscribe to. Can be a string, array of strings, regular expression, or function.
+- **filter**: The event topic to subscribe to, or a function that returns true for events to handle.
 - **callback**: The function to call when an event of the specified type is dispatched.
-- **deps**: Optional array of dependencies for the `useEffect` hook.
+- Returns a function to unsubscribe.
 
-### `busDispatch(event)`
+### `busDispatch<T>(topic, message)`
 
-- **event**: The event to dispatch. Can be a string or an object with a `type` property.
+- **topic**: The event topic to dispatch.
+- **message**: The message payload for the event.
+
+### `useEventBus<T>(topic, callback, deps?)`
+
+- **topic**: The event topic to subscribe to.
+- **callback**: The function to call when an event of the specified topic is dispatched.
+- **deps**: Optional array of dependencies for the useEffect hook.
+
+## TypeScript Support
+
+This package is written in TypeScript and provides full type definitions. You can define your own event interfaces to ensure type safety when using the event bus. Your event interface should extend the following structure:
+
+```typescript
+interface YourEventInterface {
+  topic: string;
+  message: unknown;
+}
+```
 
 ## License
 
 MIT
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Testing
+
+To run the tests for this package, use the following command:
